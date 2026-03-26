@@ -250,6 +250,59 @@ export function buildJobIdentity(
   return buildCompositeIdentityKey(input);
 }
 
+export async function resolveRedirectedApplicationLink(rawLink: string): Promise<string> {
+  const normalizedInput = normalizeUrlForIdentity(rawLink);
+  const parsed = tryParseUrl(normalizedInput);
+  if (!parsed) {
+    return normalizedInput;
+  }
+
+  const host = parsed.hostname.toLowerCase();
+  const isSendGridHost = host === "sendgrid.net" || host.endsWith(".sendgrid.net");
+  if (!isSendGridHost) {
+    return normalizedInput;
+  }
+
+  let currentUrl = parsed.toString();
+  for (let i = 0; i < 5; i += 1) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+    try {
+      const response = await fetch(currentUrl, {
+        method: "GET",
+        redirect: "manual",
+        signal: controller.signal,
+        headers: {
+          // A browser-like UA improves compatibility with some redirect services.
+          "user-agent": "Mozilla/5.0 (compatible; JobParser/1.0)",
+        },
+      });
+      clearTimeout(timeout);
+
+      const location = response.headers.get("location");
+      if (!location) {
+        break;
+      }
+
+      const next = tryParseUrl(location) ?? tryParseUrl(new URL(location, currentUrl).toString());
+      if (!next) {
+        break;
+      }
+
+      currentUrl = next.toString();
+      const nextHost = next.hostname.toLowerCase();
+      if (nextHost !== "sendgrid.net" && !nextHost.endsWith(".sendgrid.net")) {
+        break;
+      }
+    } catch {
+      clearTimeout(timeout);
+      break;
+    }
+  }
+
+  return normalizeUrlForIdentity(currentUrl);
+}
+
 export function splitCompanyAndLocation(summaryText: string): { company: string; location: string } {
   const cleaned = cleanText(summaryText);
   const parts = cleaned.split("·").map((part) => cleanText(part));

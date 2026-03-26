@@ -4,7 +4,7 @@ import { GmailClient } from "../google/gmailClient.js";
 import { SheetsClient } from "../google/sheetsClient.js";
 import { logger } from "../lib/logger.js";
 import { parseLinkedInEmail } from "../parsers/linkedinParser.js";
-import { normalizeApplicationLink } from "../parsers/shared.js";
+import { buildJobIdentity, normalizeUrlForIdentity } from "../parsers/shared.js";
 import { parseWttjEmail } from "../parsers/wttjParser.js";
 import { formatSheetDate } from "./dateRanges.js";
 import { buildCombinedQuery } from "./gmailQueries.js";
@@ -47,8 +47,18 @@ export async function runScan(env: AppEnv, scanRange: ScanRange): Promise<RunSum
   const sheetsClient = new SheetsClient(auth, env.googleSpreadsheetId, env.googleWorksheetName);
   await sheetsClient.ensureHeaders();
 
-  const existingLinks = await sheetsClient.getExistingLinks();
-  const dedupeSet = new Set(existingLinks.map((link) => normalizeApplicationLink(link)));
+  const existingRows = await sheetsClient.getExistingRows();
+  const dedupeSet = new Set(
+    existingRows.map((row) =>
+      buildJobIdentity({
+        source: row.applicationLink.includes("linkedin.com") ? "linkedin" : "wttj",
+        jobTitle: row.jobTitle,
+        company: row.company,
+        location: row.location,
+        applicationLink: row.applicationLink,
+      }),
+    ),
+  );
   const candidates: JobRecord[] = [];
 
   let scannedMessages = 0;
@@ -82,16 +92,17 @@ export async function runScan(env: AppEnv, scanRange: ScanRange): Promise<RunSum
       skippedMalformed += 1;
       continue;
     }
-    const normalizedLink = normalizeApplicationLink(row.applicationLink);
+    const normalizedLink = normalizeUrlForIdentity(row.applicationLink);
     if (!normalizedLink) {
       skippedMalformed += 1;
       continue;
     }
-    if (dedupeSet.has(normalizedLink)) {
+    const identity = buildJobIdentity({ ...row, applicationLink: normalizedLink });
+    if (dedupeSet.has(identity)) {
       skippedDuplicates += 1;
       continue;
     }
-    dedupeSet.add(normalizedLink);
+    dedupeSet.add(identity);
     uniqueToInsert.push({ ...row, applicationLink: normalizedLink, location: row.location || "" });
   }
 

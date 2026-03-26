@@ -1,4 +1,5 @@
 import { load } from "cheerio";
+import { JobRecord } from "../types/job.js";
 
 const TRACKING_QUERY_PARAMS = new Set([
   "trk",
@@ -19,6 +20,23 @@ const TRACKING_QUERY_PARAMS = new Set([
   "trackingId",
   "refId",
 ]);
+
+const REDIRECT_PARAM_KEYS = [
+  "url",
+  "u",
+  "target",
+  "to",
+  "redirect",
+  "redirect_url",
+  "redirectUrl",
+  "dest",
+  "destination",
+  "r",
+  "q",
+  "next",
+] as const;
+
+const TRACKING_HOST_PATTERNS = ["sendgrid.net", "google.com"];
 
 export function getCheerio(html: string) {
   return load(html);
@@ -41,26 +59,110 @@ function extractGoogleRedirectTarget(url: URL): string {
   return q ? decodeURIComponent(q) : url.toString();
 }
 
-export function normalizeApplicationLink(rawLink: string): string {
-  const link = cleanText(rawLink).replace(/&amp;/g, "&");
-  const initial = tryParseUrl(link);
-  if (!initial) {
-    return link;
+function safeDecode(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+function looksLikeAbsoluteUrl(value: string): boolean {
+  return /^https?:\/\//i.test(value);
+}
+
+function parseDecodedUrl(value: string): URL | null {
+  const direct = tryParseUrl(value);
+  if (direct) {
+    return direct;
   }
 
-  let workingLink = initial;
-  if (workingLink.hostname === "www.google.com" && workingLink.pathname === "/url") {
-    const nested = tryParseUrl(extractGoogleRedirectTarget(workingLink));
-    if (nested) {
-      workingLink = nested;
+  const decodedOnce = safeDecode(value);
+  const decoded = tryParseUrl(decodedOnce);
+  if (decoded) {
+    return decoded;
+  }
+
+  const decodedTwice = safeDecode(decodedOnce);
+  return tryParseUrl(decodedTwice);
+}
+
+function isTrackingHost(hostname: string): boolean {
+  const lowerHost = hostname.toLowerCase();
+  return TRACKING_HOST_PATTERNS.some(
+    (pattern) => lowerHost === pattern || lowerHost.endsWith(`.${pattern}`),
+  );
+}
+
+export function extractRedirectTargetFromUrl(url: URL): string | null {
+  for (const key of REDIRECT_PARAM_KEYS) {
+    const value = url.searchParams.get(key);
+    if (!value) {
+      continue;
     }
+    const decoded = safeDecode(value);
+    if (looksLikeAbsoluteUrl(decoded) || looksLikeAbsoluteUrl(value)) {
+      return decoded;
+    }
+  }
+
+  return null;
+}
+
+export function unwrapTrackingUrl(rawLink: string): URL | null {
+  const link = cleanText(rawLink).replace(/&amp;/g, "&");
+  let workingLink = tryParseUrl(link);
+  if (!workingLink) {
+    return null;
+  }
+
+  for (let i = 0; i < 4; i += 1) {
+    if (workingLink.hostname === "www.google.com" && workingLink.pathname === "/url") {
+      const nested = parseDecodedUrl(extractGoogleRedirectTarget(workingLink));
+      if (nested) {
+        workingLink = nested;
+        continue;
+      }
+    }
+
+    const redirectTarget = extractRedirectTargetFromUrl(workingLink);
+    if (!redirectTarget) {
+      break;
+    }
+
+    const nested = parseDecodedUrl(redirectTarget);
+    if (!nested) {
+      break;
+    }
+    if (nested.toString() === workingLink.toString()) {
+      break;
+    }
+    workingLink = nested;
+  }
+
+  return workingLink;
+}
+
+export function normalizeUrlForIdentity(rawLink: string): string {
+  const workingLink = unwrapTrackingUrl(rawLink);
+  if (!workingLink) {
+    return cleanText(rawLink).replace(/&amp;/g, "&");
   }
 
   if (workingLink.hostname.includes("linkedin.com")) {
-    const match = workingLink.pathname.match(/\/jobs\/view\/(\d+)/) ?? workingLink.pathname.match(/\/comm\/jobs\/view\/(\d+)/);
+    const match =
+      workingLink.pathname.match(/\/jobs\/view\/(\d+)/) ??
+      workingLink.pathname.match(/\/comm\/jobs\/view\/(\d+)/);
     if (match) {
       return `https://www.linkedin.com/jobs/view/${match[1]}`;
     }
+  }
+
+  const host = workingLink.hostname.toLowerCase();
+  if (host === "www.welcometothejungle.com") {
+    workingLink.hostname = "welcometothejungle.com";
+  } else {
+    workingLink.hostname = host;
   }
 
   workingLink.hash = "";
@@ -69,8 +171,79 @@ export function normalizeApplicationLink(rawLink: string): string {
       workingLink.searchParams.delete(key);
     }
   }
-  workingLink.hostname = workingLink.hostname.toLowerCase();
+
+  if (workingLink.pathname !== "/" && workingLink.pathname.endsWith("/")) {
+    workingLink.pathname = workingLink.pathname.slice(0, -1);
+  }
+
   return workingLink.toString();
+}
+
+export function normalizeApplicationLink(rawLink: string): string {
+  return normalizeUrlForIdentity(rawLink);
+}
+
+export function normalizeIdentityText(value: string): string {
+  const cleaned = cleanText(value || "").toLowerCase();
+  return cleaned
+    .replace(/[|/_-]+/g, " ")
+    .replace(/&/g, " and ")
+    .replace(/[^\w\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function extractStableIdentifierFromUrl(rawLink: string): string | null {
+  const normalizedUrl = normalizeUrlForIdentity(rawLink);
+  const parsed = tryParseUrl(normalizedUrl);
+  if (!parsed) {
+    return null;
+  }
+
+  if (parsed.hostname.includes("linkedin.com")) {
+    const linkedinId = parsed.pathname.match(/\/jobs\/view\/(\d+)/)?.[1];
+    if (linkedinId) {
+      return `linkedin:${linkedinId}`;
+    }
+  }
+
+  if (parsed.hostname.includes("welcometothejungle.com")) {
+    const slug = parsed.pathname
+      .split("/")
+      .filter(Boolean)
+      .pop();
+    if (slug && /^[a-z0-9-]{6,}$/i.test(slug)) {
+      return `wttj:${slug.toLowerCase()}`;
+    }
+  }
+
+  return null;
+}
+
+export function buildCompositeIdentityKey(
+  input: Pick<JobRecord, "source" | "jobTitle" | "company" | "location">,
+): string {
+  const title = normalizeIdentityText(input.jobTitle) || "unknown-title";
+  const company = normalizeIdentityText(input.company) || "unknown-company";
+  const location = normalizeIdentityText(input.location) || "unknown-location";
+  return `cmp:${input.source}:${title}|${company}|${location}`;
+}
+
+export function buildJobIdentity(
+  input: Pick<JobRecord, "source" | "jobTitle" | "company" | "location" | "applicationLink">,
+): string {
+  const normalizedUrl = normalizeUrlForIdentity(input.applicationLink);
+  const parsed = tryParseUrl(normalizedUrl);
+  if (parsed && !isTrackingHost(parsed.hostname)) {
+    return `url:${normalizedUrl}`;
+  }
+
+  const stableId = extractStableIdentifierFromUrl(input.applicationLink);
+  if (stableId) {
+    return `id:${input.source}:${stableId}`;
+  }
+
+  return buildCompositeIdentityKey(input);
 }
 
 export function splitCompanyAndLocation(summaryText: string): { company: string; location: string } {

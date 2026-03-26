@@ -20,10 +20,14 @@ export interface RunSummary {
 
 function isSourceMessage(source: SupportedSource, from: string, subject: string): boolean {
   const fromLower = from.toLowerCase();
-  const subjectLower = subject.toLowerCase();
   if (source === "linkedin") {
-    return fromLower.includes("linkedin") && subjectLower.includes("job");
+    const isLinkedinSender =
+      fromLower.includes("linkedin.com") ||
+      fromLower.includes("linkedinmail.com") ||
+      fromLower.includes("linkedin");
+    return isLinkedinSender;
   }
+  const subjectLower = subject.toLowerCase();
   return (
     (fromLower.includes("welcometothejungle") || fromLower.includes("otta")) &&
     (subjectLower.includes("new match") || subjectLower.includes("job"))

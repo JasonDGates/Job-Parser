@@ -65,7 +65,7 @@ export class GmailClient {
             maxResults: 500,
           }),
         );
-        const batch = response.data.messages?.map((m) => m.id).filter(Boolean) as string[];
+        const batch = (response.data.messages?.map((m) => m.id).filter(Boolean) ?? []) as string[];
         ids.push(...batch);
         pageToken = response.data.nextPageToken || undefined;
       } while (pageToken);

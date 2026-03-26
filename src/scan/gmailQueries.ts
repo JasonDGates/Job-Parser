@@ -6,7 +6,7 @@ function toEpochDay(date: Date): number {
 
 export function buildSourceQuery(source: SupportedSource): string {
   if (source === "linkedin") {
-    return "(from:jobalerts-noreply@linkedin.com OR from:linkedin.com) (subject:\"job\" OR subject:\"alert\")";
+    return "(from:jobalerts-noreply@linkedin.com OR from:linkedin.com OR from:linkedinmail.com)";
   }
   return "(from:welcometothejungle.com OR from:email.welcometothejungle.com OR from:otta.com) (subject:\"New match\" OR subject:\"job\")";
 }

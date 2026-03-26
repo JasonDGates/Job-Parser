@@ -10,6 +10,14 @@ const EXPECTED_HEADERS = [
   "Link to the application",
 ];
 
+export interface ExistingSheetRow {
+  date: string;
+  jobTitle: string;
+  company: string;
+  location: string;
+  applicationLink: string;
+}
+
 export class SheetsClient {
   private readonly sheets = google.sheets("v4");
 
@@ -67,6 +75,31 @@ export class SheetsClient {
       return (response.data.values || []).flat().map((v) => String(v).trim()).filter(Boolean);
     } catch (error) {
       throw new AppError("Failed to read existing sheet links.", "SHEETS_ACCESS_ERROR", error);
+    }
+  }
+
+  async getExistingRows(): Promise<ExistingSheetRow[]> {
+    try {
+      const response = await this.sheets.spreadsheets.values.get({
+        auth: this.auth,
+        spreadsheetId: this.spreadsheetId,
+        range: this.rangeA1("A2:E"),
+      });
+
+      return (response.data.values || [])
+        .map((row) => {
+          const values = row.map((v) => String(v).trim());
+          return {
+            date: values[0] || "",
+            jobTitle: values[1] || "",
+            company: values[2] || "",
+            location: values[3] || "",
+            applicationLink: values[4] || "",
+          };
+        })
+        .filter((row) => Boolean(row.applicationLink) || Boolean(row.jobTitle));
+    } catch (error) {
+      throw new AppError("Failed to read existing sheet rows.", "SHEETS_ACCESS_ERROR", error);
     }
   }
 

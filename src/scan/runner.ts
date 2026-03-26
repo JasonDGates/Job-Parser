@@ -4,7 +4,11 @@ import { GmailClient } from "../google/gmailClient.js";
 import { SheetsClient } from "../google/sheetsClient.js";
 import { logger } from "../lib/logger.js";
 import { parseLinkedInEmail } from "../parsers/linkedinParser.js";
-import { buildJobIdentity, normalizeUrlForIdentity } from "../parsers/shared.js";
+import {
+  buildJobIdentity,
+  normalizeUrlForIdentity,
+  resolveRedirectedApplicationLink,
+} from "../parsers/shared.js";
 import { parseWttjEmail } from "../parsers/wttjParser.js";
 import { formatSheetDate } from "./dateRanges.js";
 import { buildCombinedQuery } from "./gmailQueries.js";
@@ -96,7 +100,11 @@ export async function runScan(env: AppEnv, scanRange: ScanRange): Promise<RunSum
       skippedMalformed += 1;
       continue;
     }
-    const normalizedLink = normalizeUrlForIdentity(row.applicationLink);
+    const resolvedLink =
+      row.source === "wttj"
+        ? await resolveRedirectedApplicationLink(row.applicationLink)
+        : row.applicationLink;
+    const normalizedLink = normalizeUrlForIdentity(resolvedLink);
     if (!normalizedLink) {
       skippedMalformed += 1;
       continue;

@@ -1,0 +1,24 @@
+{
+  "name": "gmail-job-sheet-cli",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx src/index.ts",
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@google-cloud/local-auth": "^3.0.1",
+    "cheerio": "^1.0.0",
+    "commander": "^14.0.1",
+    "dotenv": "^17.2.3",
+    "googleapis": "^157.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.5.2",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.2"
+  }
+}

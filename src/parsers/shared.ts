@@ -152,7 +152,8 @@ export function normalizeUrlForIdentity(rawLink: string): string {
   if (workingLink.hostname.includes("linkedin.com")) {
     const match =
       workingLink.pathname.match(/\/jobs\/view\/(\d+)/) ??
-      workingLink.pathname.match(/\/comm\/jobs\/view\/(\d+)/);
+      workingLink.pathname.match(/\/comm\/jobs\/view\/(\d+)/) ??
+      workingLink.pathname.match(/\/jobs-guest\/jobs\/view\/(\d+)/);
     if (match) {
       return `https://www.linkedin.com/jobs/view/${match[1]}`;
     }
@@ -201,7 +202,10 @@ function extractStableIdentifierFromUrl(rawLink: string): string | null {
   }
 
   if (parsed.hostname.includes("linkedin.com")) {
-    const linkedinId = parsed.pathname.match(/\/jobs\/view\/(\d+)/)?.[1];
+    const linkedinId =
+      parsed.pathname.match(/\/jobs\/view\/(\d+)/)?.[1] ??
+      parsed.pathname.match(/\/comm\/jobs\/view\/(\d+)/)?.[1] ??
+      parsed.pathname.match(/\/jobs-guest\/jobs\/view\/(\d+)/)?.[1];
     if (linkedinId) {
       return `linkedin:${linkedinId}`;
     }

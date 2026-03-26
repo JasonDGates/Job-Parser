@@ -45,7 +45,12 @@ export async function runCliSafe(argv: string[]): Promise<void> {
     await runCli(argv);
   } catch (error) {
     const appError = toAppError(error, "CLI run failed.");
-    logger.error(appError.message, { code: appError.code });
+    const causeAny = appError.cause as any;
+    logger.error(appError.message, {
+      code: appError.code,
+      causeStatus: causeAny?.response?.status ?? causeAny?.code,
+      causeMessage: causeAny?.response?.data?.error?.message ?? causeAny?.message,
+    });
     process.exitCode = 1;
   }
 }

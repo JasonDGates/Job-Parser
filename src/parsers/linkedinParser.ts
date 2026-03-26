@@ -11,10 +11,15 @@ export function parseLinkedInEmail(input: LinkedInParseInput): JobRecord[] {
   const results: JobRecord[] = [];
   const seenLinks = new Set<string>();
 
-  $("a[href*='linkedin.com'][href*='/jobs/view/'], a[href*='linkedin.com'][href*='/comm/jobs/view/']").each((_, el) => {
+  $("a[href*='linkedin.com'][href*='/jobs']").each((_, el) => {
     const href = $(el).attr("href");
-    const title = cleanText($(el).text());
-    if (!href || !title) {
+    const anchor = $(el);
+    const title = cleanText(anchor.text() || anchor.attr("aria-label") || "");
+    const fallbackTitle = cleanText(
+      anchor.find("strong").first().text() || anchor.closest("table").find("strong").first().text(),
+    );
+    const resolvedTitle = title || fallbackTitle;
+    if (!href || !resolvedTitle) {
       return;
     }
 
@@ -22,10 +27,14 @@ export function parseLinkedInEmail(input: LinkedInParseInput): JobRecord[] {
     if (!canonicalLink || seenLinks.has(canonicalLink)) {
       return;
     }
+    // Keep only concrete job posting links, not alert/search/manage pages.
+    if (!/^https:\/\/www\.linkedin\.com\/jobs\/view\/\d+$/.test(canonicalLink)) {
+      return;
+    }
 
     const detailsNodeText = cleanText($(el).closest("table").find("p").first().text());
     const { company, location } = splitCompanyAndLocation(detailsNodeText);
-    if (!title || !company) {
+    if (!resolvedTitle) {
       return;
     }
 
@@ -33,7 +42,7 @@ export function parseLinkedInEmail(input: LinkedInParseInput): JobRecord[] {
     results.push({
       source: "linkedin",
       date: input.emailDate,
-      jobTitle: title,
+      jobTitle: resolvedTitle,
       company,
       location,
       applicationLink: canonicalLink,
